@@ -25,7 +25,7 @@ spec:
         app: rollouts-demo
     spec:
       containers:
-      - name: rollouts-demo
+      - name: rollout
         image: argoproj/rollouts-demo:blue
         ports:
         - name: http
