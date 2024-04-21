@@ -7,8 +7,6 @@ metadata:
     demo: deployment
 spec:
   replicas: 4
-  startegy:
-      type: Recreate
   selector:
     matchLabels:
       app: blue
