@@ -6,7 +6,7 @@ metadata:
     app: blue
     demo: deployment
 spec:
-  replicas: 2
+  replicas: 4
   startegy:
       type: Recreate
   selector:
