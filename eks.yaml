@@ -4,7 +4,6 @@ kind: ClusterConfig
 metadata:
   name: demo-cluster
   region: us-east-1
-  version: 1.27
 
 managedNodeGroups:
   - name: demo
