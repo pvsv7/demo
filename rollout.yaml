@@ -1,17 +1,17 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata:
-  name: rollout
+  name: rollouts-demo
 spec:
   replicas: 5
   strategy:
     canary:
       steps:
       - setWeight: 20
-      - pause: {}
+      - pause: {duration: 10}
       - analysis:
-         templates:
-         - templateName: canary-check
+          templates:
+          - templateName: canary-check
       - setWeight: 40
       - pause: {duration: 10}
       - setWeight: 60
@@ -28,7 +28,7 @@ spec:
         app: rollouts-demo
     spec:
       containers:
-      - name: rollout
+      - name: rollouts-demo
         image: argoproj/rollouts-demo:blue
         ports:
         - name: http
@@ -38,6 +38,7 @@ spec:
           requests:
             memory: 32Mi
             cpu: 5m
+
 ---
 apiVersion: v1
 kind: Service
