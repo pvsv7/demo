@@ -21,11 +21,11 @@ spec:
   revisionHistoryLimit: 2
   selector:
     matchLabels:
-      app: rollout
+      app: rollouts-demo
   template:
     metadata:
       labels:
-        app: rollout
+        app: rollouts-demo
     spec:
       containers:
       - name: rollout
@@ -42,7 +42,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: rollout
+  name: rollouts-demo
 spec:
   type: NodePort
   ports:
@@ -51,5 +51,5 @@ spec:
     protocol: TCP
     name: http
   selector:
-    app: rollout 
+    app: rollouts-demo
 
