@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: sample-app-1
+  template:
+    metadata:
+      labels:
+        app: sample-app-1
+    spec:
+      containers:
+        - name: sample-container
+          image: nginx:latest  # Example nginx image
+          ports:
+            - containerPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-2
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sample-app-2
+  template:
+    metadata:
+      labels:
+        app: sample-app-2
+    spec:
+      containers:
+        - name: sample-container
+          image: redis:latest  # Example redis image
+          ports:
+            - containerPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment-3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sample-app-3
+  template:
+    metadata:
+      labels:
+        app: sample-app-3
+    spec:
+      containers:
+        - name: sample-container
+          image: mysql:latest  # Example mysql image
+          ports:
+            - containerPort: 3306
+
+
