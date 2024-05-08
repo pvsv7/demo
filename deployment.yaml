@@ -54,7 +54,7 @@ spec:
     spec:
       containers:
         - name: sample-container
-          image: mysql:latest  # Example mysql image
+          image: nginx  # Example mysql image
           ports:
             - containerPort: 3306
 
