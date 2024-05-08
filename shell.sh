@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Define Kubernetes namespace and deployments
-NAMESPACE="your-namespace"
-DEPLOYMENTS=("deployment1" "deployment2" "deployment3")
+NAMESPACE="default"
+DEPLOYMENTS=("deployment-1" "deployment-2" "deployment-3")
 
 # Retrieve and print original replica counts
 for deployment in "${DEPLOYMENTS[@]}"; do
