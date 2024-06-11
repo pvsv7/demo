@@ -1,0 +1,31 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'CHECK_URL', defaultValue: 'http://example.com', description: 'URL to check')
+    }
+
+    stages {
+        stage('Check URL Trust') {
+            steps {
+                script {
+                    def url = params.CHECK_URL
+                    sh """
+                        response=\$(curl -s -o /dev/null -w "%{http_code}" ${url})
+                        if [ "\${response}" -ne 200 ]; then
+                            echo "Trust issue detected for URL: ${url}"
+                        else
+                            echo "No trust issue for URL: ${url}"
+                        fi
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'URL check completed'
+        }
+    }
+}
