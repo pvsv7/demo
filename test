@@ -1,31 +1,11 @@
-pipeline {
-    agent any
-
-    parameters {
-        string(name: 'CHECK_URL', defaultValue: 'http://example.com', description: 'URL to check')
-    }
-
-    stages {
-        stage('Check URL Trust') {
-            steps {
-                script {
-                    def url = params.CHECK_URL
-                    sh """
-                        response=\$(curl -s -o /dev/null -w "%{http_code}" ${url})
-                        if [ "\${response}" -ne 200 ]; then
-                            echo "Trust issue detected for URL: ${url}"
-                        else
-                            echo "No trust issue for URL: ${url}"
-                        fi
-                    """
+if (response == 52) {
+                    echo "Curl returned exit code 52: Empty reply from server. Marking build as successful."
+                    currentBuild.result = 'SUCCESS'
+                } else {
+                    echo "Response code: ${response}"
+                    if (response != 0) {
+                        unstable('Zula import failed')
+                    } else {
+                        echo "Zula import successful"
+                    }
                 }
-            }
-        }
-    }
-
-    post {
-        always {
-            echo 'URL check completed'
-        }
-    }
-}
