@@ -1,11 +1,1 @@
-if (response == 52) {
-                    echo "Curl returned exit code 52: Empty reply from server. Marking build as successful."
-                    currentBuild.result = 'SUCCESS'
-                } else {
-                    echo "Response code: ${response}"
-                    if (response != 0) {
-                        unstable('Zula import failed')
-                    } else {
-                        echo "Zula import successful"
-                    }
-                }
+
