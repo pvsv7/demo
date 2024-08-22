@@ -1,1 +1,64 @@
 
+### Jenkins Pipeline Documentation: License Expiry Check
+
+#### **Purpose**
+This Jenkins pipeline job is designed to automate the monitoring of a license expiry date stored in a Jenkins environment variable. The job runs once daily and performs the following tasks:
+
+1. **Check License Expiry Date:** 
+   - The job retrieves the license expiry date from a specific Jenkins environment variable.
+   - It checks if the expiry date is within the next 60 days.
+
+2. **Send Notifications:**
+   - **Expiry Date Warning:** If the expiry date is within 60 days, a notification is sent to alert the responsible team.
+   - **Missing or Incorrect Format:** If the expiry date is missing or not in the expected format, a notification is sent indicating an issue.
+
+3. **Post-Renewal Update:**
+   - Once the license is renewed, the Jenkins environment variable must be manually updated with the new expiry date to continue accurate monitoring.
+
+#### **Pipeline Steps**
+
+1. **Job Schedule:**
+   - The job is scheduled to run once daily (typically using a cron schedule).
+
+2. **Fetch Expiry Date:**
+   - The pipeline accesses a specific Jenkins environment variable (e.g., `LICENSE_EXPIRY_DATE`) to fetch the current license expiry date.
+
+3. **Validate Expiry Date:**
+   - The pipeline checks if the fetched expiry date is:
+     - **Present:** Ensuring that the environment variable is not empty.
+     - **Correct Format:** The date must be in a specific format (e.g., `YYYY-MM-DD`).
+
+4. **Check Timeframe:**
+   - The pipeline calculates the number of days between the current date and the expiry date.
+   - If the expiry date is less than or equal to 60 days from the current date, a warning notification is triggered.
+
+5. **Send Notification:**
+   - **Warning Notification:** Sent if the expiry date is within 60 days.
+   - **Error Notification:** Sent if the expiry date is not found or is in an incorrect format.
+
+6. **Post-Renewal Action:**
+   - After the license is renewed, the corresponding environment variable must be updated with the new expiry date to maintain accurate monitoring.
+
+#### **Error Handling**
+- **Missing Expiry Date:**
+  - The job sends a notification if the expiry date environment variable is not set.
+- **Invalid Date Format:**
+  - The job validates the date format and sends a notification if the date is not in the expected format.
+
+#### **Environment Variable**
+- **Name:** `LICENSE_EXPIRY_DATE`
+- **Expected Format:** `YYYY-MM-DD`
+- **Update Process:** Manually update this variable post-license renewal.
+
+#### **Notifications**
+- **Recipients:** The DevOps team or relevant stakeholders.
+- **Message Content:**
+  - For expiry within 60 days: "The license is set to expire on [Expiry Date]. Please renew the license."
+  - For missing/invalid expiry date: "The license expiry date is missing or in an incorrect format. Please check the environment variable."
+
+#### **Scheduling**
+- **Cron Expression:** Example: `H 2 * * *` (Runs daily at a random time between 2 AM and 3 AM).
+
+---
+
+This documentation should be kept up-to-date to reflect any changes in the pipeline logic or environment variable naming and usage.
