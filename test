@@ -1,2 +1,105 @@
+pipeline {
+    agent none
+    triggers {
+        cron('H H * * *') // Runs the job once a day at a random time
+    }
+    environment {
+        EMAIL_RECIPIENT = 'abc.com'
+    }
+    stages {
+        stage('Check SSL Certificate Expiry') {
+            parallel {
+                stage('Dev Environment') {
+                    agent { label 'agent1' }
+                    environment {
+                        USER = 'user1'
+                        CERT_FILE = 'dev.net.crt'
+                    }
+                    steps {
+                        checkSSLCertificateExpiry(USER, CERT_FILE)
+                    }
+                }
+                stage('QA Environment') {
+                    agent { label 'agent2' }
+                    environment {
+                        USER = 'user2'
+                        CERT_FILE = 'qa.net.crt'
+                    }
+                    steps {
+                        checkSSLCertificateExpiry(USER, CERT_FILE)
+                    }
+                }
+                stage('Int Environment') {
+                    agent { label 'agent3' }
+                    environment {
+                        USER = 'user3'
+                        CERT_FILE = 'int.net.crt'
+                    }
+                    steps {
+                        checkSSLCertificateExpiry(USER, CERT_FILE)
+                    }
+                }
+                stage('Prod Environment') {
+                    agent { label 'agent4' }
+                    environment {
+                        USER = 'user4'
+                        CERT_FILE = 'prod.net.crt'
+                    }
+                    steps {
+                        checkSSLCertificateExpiry(USER, CERT_FILE)
+                    }
+                }
+            }
+        }
+    }
+    post {
+        failure {
+            mail to: "${EMAIL_RECIPIENT}",
+                 subject: "Jenkins Job Failed: SSL Certificate Expiry Check",
+                 body: "The SSL certificate expiry check failed. Please check the Jenkins logs for details."
+        }
+    }
+}
 
-jo
+def checkSSLCertificateExpiry(String user, String certFile) {
+    sh """
+    cd /db2/home/${user}/sqllib/security/cacert_server || { echo "Failed to navigate to certificate directory"; exit 1; }
+
+    dateformat=\$(openssl x509 -enddate -noout -in "${certFile}" | awk -F= '{print \$2}')
+    expiration_date=\$(date -d "\${dateformat}" +%Y-%m-%d)
+    hostname=\$(hostname -f)
+    expiration_seconds=\$(date -d "\${expiration_date}" +%s)
+    alert_seconds=\$(date -d "@\$((expiration_seconds - 60 * 24 * 3600))" +%s)
+    current_seconds=\$(date +%s)
+
+    if [ "\${current_seconds}" -ge "\${alert_seconds}" ]; then
+        subject="SSL Certificate Expiry Alert for \${hostname} in ${user} environment"
+        message="SSL certificate will expire on \${expiration_date} for the user: ${user}. Please renew it."
+        echo "\${message}" | mail -s "\${subject}" "${EMAIL_RECIPIENT}"
+        echo "Email alert sent successfully!"
+    else
+        echo "No need to send an alert yet for ${user}."
+    fi
+    """
+}
+
+
+
+### **Pipeline 1: Scaling Down Pods**
+
+- **Objective**: This Jenkins pipeline is responsible for scaling down all deployments in two namespaces: `Namespace A` and `Namespace B`.
+- **Process**:
+    1. The pipeline retrieves all deployments within the specified namespace.
+    2. It fetches the current replica count for each deployment.
+    3. The pipeline then annotates each deployment with its corresponding replica count.
+    4. Finally, it scales down the pods in each deployment to zero.
+- **Execution**: This pipeline runs separately in both namespaces (`Namespace A` and `Namespace B`), ensuring that all deployments in these namespaces are scaled down.
+
+### **Pipeline 2: Scaling Up Pods**
+
+- **Objective**: This Jenkins pipeline is designed to scale back the deployments in `Namespace A` and `Namespace B` to their original replica count.
+- **Process**:
+    1. The pipeline retrieves the replica count from the annotations added by the scaling down pipeline.
+    2. It then scales up the pods in each deployment to their original replica count in both namespaces.
+    3. After scaling the deployments back up, the pipeline removes the annotations from each deployment.
+- **Execution**: This pipeline also runs in both namespaces, ensuring that all deployments are restored to their original state.
