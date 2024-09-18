@@ -161,36 +161,8 @@
 - Combine commands with `&&` to minimize the number of layers.
 - Use multi-stage builds to reduce the final image size.
 
-#!/bin/bash
 
-# Set the necessary variables
-INSTANCE_ID="yi-058bd3ee3dd5261db"
-NAMESPACE="DB2Metrics"
-DB_NAME="EKE1"  # Replace with your actual DB2 database name
-DB_STATUS=""
-TOTAL_HIT_RATIO=""
 
-# Switch to db2user1 user
-sudo su - db2user1
 
-# Connect to the DB2 database
-db2 connect to "$DB_NAME"
 
-# Get DB status
-DB_STATUS=$(db2 -x "select DB_STATUS from SYSIBMADM.SNAPDB where DB_NAME='$DB_NAME'")
-if [[ "$DB_STATUS" == *"ACTIVE"* ]]; then
-    DB_STATUS_VALUE=1
-else
-    DB_STATUS_VALUE=0
-fi
-
-# Get Total Hit Ratio Percentage
-TOTAL_HIT_RATIO=$(db2 -x "select TOTAL_HIT_RATIO_PERCENTAGE from SYSIBMADM.BP_HITRATIO")
-
-# Publish custom metrics to CloudWatch
-aws cloudwatch put-metric-data --metric-name "DBStatus" --namespace "$NAMESPACE" --dimensions "InstanceId=$INSTANCE_ID,DBName=$DB_NAME" --value "$DB_STATUS_VALUE" --unit "Count"
-aws cloudwatch put-metric-data --metric-name "TotalHitRatioPercentage" --namespace "$NAMESPACE" --dimensions "InstanceId=$INSTANCE_ID,DBName=$DB_NAME" --value "$TOTAL_HIT_RATIO" --unit "Percent"
-
-# Disconnect from the database
-db2 disconnect "$DB_NAME"
 
