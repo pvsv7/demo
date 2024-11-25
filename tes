@@ -1,0 +1,184 @@
+from datetime import datetime
+import os
+import openpyxl
+import xlsxwriter
+import requests
+import schedule
+import time
+from requests_oauthlib import OAuth2Session
+from oauthlib.oauth2 import BackendApplicationClient
+import json
+from requests.exceptions import SSLError
+import urllib3
+
+
+print("Collecting information....")
+int_endpoints = [
+    'https://a.c.net/api/proxy-connect/INT/connectors/em.api.acm.bundle_qa/status',
+    'https://a.c.net/api/proxy-connect/INT/connectors/em.api.acm.bundle_ti/status'
+]
+
+user = "em"
+password = "random"
+auth_url = "https://a.c.net/api/v2/login/credentials"  # Replace with your authentication endpoint
+
+results = []
+failed_tasks = []
+
+
+def token(user, password, auth_url):
+    try:
+        # Define request body
+        payload = {
+            "user": user,
+            "password": password
+        }
+
+        # Define headers (if needed)
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        # Make POST request to authentication endpoint
+        urllib3.disable_warnings()  # Disables SSL warnings
+
+        response = requests.post(auth_url, json=payload, headers=headers, verify=False)
+
+        # Check if request was successful
+        if response.status_code == 200:
+            token = response.json().get('token')
+            return token
+        else:
+            print(f"Failed to generate token. Status code: {response.status_code}")
+            return None
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error generating token: {e}")
+        return None
+
+
+def log_failed_tasks(failed_tasks):
+    file_name = '/tmp/connectorlog/failed_tasks_log.txt'
+    with open(file_name, 'w') as file:
+        for task in failed_tasks:
+            file.write(
+                f"CONNECTOR_NAME: {task['name']}\n"
+                f"CONNECTOR_STATE: {task['connector_state']}\n"
+                f"TASK_IDS: {', '.join(map(str, task['task_ids']))}\n"
+                f"TASK_STATE: {', '.join(task['task_state'])}\n"
+                "------------------------\n"
+            )
+    print(f"Failed tasks logged in {file_name}")
+
+
+def getting_data():
+    print("........getting data........")
+    print("..............obtaining Token to Authenticate.............")
+    
+    # Directory and permissions setup
+    directory = '/tmp/connector/Kafka_connectors'
+    
+    # Check if the directory exists and create it if not
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    # Set write permissions to the directory (chmod 775 gives write permission to owner and group)
+    os.chmod(directory, 0o775)
+
+    # Obtain token
+    inttoken = token(user, password, auth_url)
+    print("..............Token obtained.............")
+    print("..............Obtaining Data.............")
+    
+    theaders = {
+        'X-Kafka-Lenses-Token': inttoken
+    }
+    
+    # Excel Setup
+    currentdate = datetime.now().strftime('%d-%m-%y')
+    file_path = os.path.join(directory, f'kafkaStatus_{currentdate}.xlsx')
+    filename = f'kafkaStatus_{currentdate}.xlsx'
+    workbook = xlsxwriter.Workbook(file_path)
+    worksheet = workbook.add_worksheet()
+
+    # Add column header
+    headers1 = ['Name', 'Connector State', 'Task IDs', 'Task State']
+    for col, header in enumerate(headers1):
+        worksheet.write(0, col, header)
+    print("headers loaded successfully")
+    
+    # Define cell format
+    green_format = workbook.add_format({'bg_color': '#00FF00'})
+    red_format = workbook.add_format({'bg_color': '#FF0000'})
+    bold_format = workbook.add_format({'bold': True})
+
+    row = 1
+
+    # Loading API endpoints
+    print("loading api endpoints")
+    for int in int_endpoints:
+        try:
+            print("making get request")
+            intresponse = requests.get(int, headers=theaders, verify=False)
+            data = intresponse.json()
+            print("extracting specific data from every url.........")
+            name = data.get('name')
+            connector_state = data.get('connector', {}).get('state')
+            tasks = data.get('tasks', [])
+            print("connector state:", connector_state)
+
+            task_ids = [task.get('id') for task in tasks]
+            task_state = [task.get('state') for task in tasks]
+            print("task state:", task_state)
+
+            # Map task states to 'RUNNING' or 'FAILED'
+            task_states_formatted = [state.capitalize() if state in ['RUNNING', 'PAUSED', 'FAILED'] else 'Unknown' for state in task_state]
+            print("task states formatted:", task_states_formatted)
+            print("task IDs:", task_ids)
+
+            # Simplify results
+            simplified_result = {
+                'name': name,
+                'connector_state': connector_state,
+                'task_ids': task_ids,
+                'task_state': task_states_formatted
+            }
+
+            if 'Failed' in task_states_formatted:
+                failed_tasks.append(simplified_result)
+
+            if intresponse.status_code == 200:
+                worksheet.write(row, 2, '200', green_format)
+                print(f"Data obtained successfully: {simplified_result} for {name}")
+                results.append(simplified_result)
+            else:
+                print(f"Failed to obtain data. Status code: {intresponse.status_code}")
+                worksheet.write(row, 2, str(intresponse.status_code), red_format)
+                results.append(intresponse.status_code)
+
+            if intresponse.status_code == 200:
+                worksheet.write(row, 0, name)
+                worksheet.write(row, 1, connector_state)
+                worksheet.write(row, 2, str(task_ids))
+                worksheet.write(row, 3, str(task_states_formatted))
+
+                # Apply formatting
+                for col, state in enumerate(task_states_formatted):
+                    cell_format = green_format if state == 'Running' else (red_format if state == 'Failed' else bold_format)
+                    worksheet.write(row, 3 + col, state, cell_format)
+                    row += 1
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error obtaining data: {e}")
+            worksheet.write(row, 2, 'Error', red_format)
+            row += 1
+
+    if failed_tasks:
+        log_failed_tasks(failed_tasks)
+        print("failed tasks logged successfully")
+    
+    workbook.close()
+    print(f"Data obtained successfully and Excel file created at {file_path}")
+
+
+getting_data()
