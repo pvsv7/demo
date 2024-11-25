@@ -1,0 +1,168 @@
+```
+# Use the official Python 3.11 image from Docker Hub
+FROM kal/python311:1.2
+
+# Create a non-root user named 'connect'
+RUN useradd -m connect
+
+# Create necessary directories
+RUN mkdir -p /tmp/connector \
+             /tmp/connectorlog \
+             /tmp/connector/Kafka_connectors
+
+# Copy the required files and set ownership to 'connect'
+COPY --chown=connect:connect failed_tasks_log.txt /tmp/connectorlog/failed_tasks_log.txt
+COPY --chown=connect:connect failed_tasks_log_prod.txt /tmp/connectorlog/failed_tasks_log_prod.txt
+COPY --chown=connect:connect entrypoint.sh /entrypoint.sh
+COPY --chown=connect:connect prodentrypoint.sh /prodentrypoint.sh
+
+# Change permissions for directories and files
+RUN chmod -R 770 /tmp/connector \
+                 /tmp/connectorlog \
+                 /tmp/connector/Kafka_connectors \
+    && chmod +x /entrypoint.sh /prodentrypoint.sh
+
+# Set ownership of all directories to 'connect'
+RUN chown -R connect:connect /tmp
+
+# Switch to the non-root user
+USER connect
+
+# Set the working directory
+WORKDIR /tmp/connector
+
+# Define the entrypoint script
+ENTRYPOINT ["/prodentrypoint.sh"]
+```
+```
+pipeline {
+    agent { label 'runner-1' }
+    triggers {
+        cron('H * * * *') // Schedule the job to run every hour
+    }
+    environment {
+        FAILED_CONNECTORS_FILE = '/home/tenant/.local/share/docker/volumes/connector_log/_data/failed_tasks_log.txt'
+        ORIGINAL_FILE_PATH = '/home/tenant/connector/Kafka_connectors/kafkaStatus_13-08-24.xlsx'
+        TARGET_FILE_PATH = '/home/tenant/workspace/EPDM-Core/epdmappman/Int_Kafka_connector'
+        EMAIL_RECIPIENT = 'example.com'
+        EMAIL_SUBJECT = 'Kafka Connector status for INT'
+        JOB_URL = "${env.JENKINS_URL}job/${env.JOB_NAME}/${env.BUILD_NUMBER}/"
+    }
+
+    stages {
+        stage('Setup Volumes') {
+            steps {
+                sh '''
+                echo "Creating Docker volumes..."
+                docker volume create connector_log
+                docker volume create Kafka_connectors
+                mkdir -p /home/tenant/.local/share/docker/volumes/connector_log/_data
+                touch /home/tenant/.local/share/docker/volumes/connector_log/_data/failed_tasks_log.txt
+                truncate -s 0 /home/tenant/.local/share/docker/volumes/connector_log/_data/failed_tasks_log.txt
+                chmod -R 770 /home/tenant/.local/share/docker/volumes/connector_log/_data
+                echo "Volumes setup completed."
+                '''
+            }
+        }
+
+        stage('Capture Connector Status') {
+            steps {
+                sh '''
+                echo "Running Kafka connector status container..."
+                docker run --name=intconnectorlog \
+                    -v /home/tenant/connector/latestconnectors:/tmp/connector \
+                    -v Kafka_connectors:/tmp/connector/Kafka_connectors \
+                    -v connector_log:/tmp/connectorlog \
+                    -i example.com/em/kafka/connectorlog:1.1 || :
+                docker rm -f intconnectorlog
+                echo "Capture connector status completed."
+                '''
+            }
+        }
+
+        stage('Copy Excel File') {
+            steps {
+                sh "cp ${ORIGINAL_FILE_PATH} ${TARGET_FILE_PATH}"
+            }
+        }
+
+        stage('Prepare Email Content') {
+            steps {
+                script {
+                    def failedConnectorsFile = FAILED_CONNECTORS_FILE
+                    def fileContent = readFile(failedConnectorsFile).trim()
+                    def htmlContent = ''
+
+                    if (fileContent.isEmpty()) {
+                        htmlContent = """
+                        <html>
+                        <body>
+                            <h2>Dear Team,</h2>
+                            <p>No failed connectors found in INT Kafka connector status.</p>
+                            <p>Job Details:</p>
+                            <ul>
+                                <li><strong>Job Name:</strong> ${env.JOB_NAME}</li>
+                                <li><strong>Build Number:</strong> ${env.BUILD_NUMBER}</li>
+                                <li><strong>Job URL:</strong> <a href="${JOB_URL}">${JOB_URL}</a></li>
+                            </ul>
+                        </body>
+                        </html>
+                        """
+                    } else {
+                        def lines = fileContent.split('\n')
+                        htmlContent = """
+                        <html>
+                        <body>
+                            <h2>Dear Team,</h2>
+                            <p>INT Kafka Connector Failed Tasks:</p>
+                            <table border="1">
+                                <tr>
+                                    <th>Connector Name</th>
+                                    <th>State</th>
+                                    <th>Task IDs</th>
+                                    <th>Task State</th>
+                                </tr>
+                        """
+                        lines.each { line ->
+                            if (line.startsWith('CONNECTOR_NAME:')) {
+                                htmlContent += "<tr><td>${line.replace('CONNECTOR_NAME:', '').trim()}</td>"
+                            } else if (line.startsWith('CONNECTOR_STATE:')) {
+                                htmlContent += "<td>${line.replace('CONNECTOR_STATE:', '').trim()}</td>"
+                            } else if (line.startsWith('TASK_IDS:')) {
+                                htmlContent += "<td>${line.replace('TASK_IDS:', '').trim()}</td>"
+                            } else if (line.startsWith('TASK_STATE:')) {
+                                htmlContent += "<td>${line.replace('TASK_STATE:', '').trim()}</td></tr>"
+                            }
+                        }
+                        htmlContent += "</table></body></html>"
+                    }
+
+                    emailext(
+                        to: EMAIL_RECIPIENT,
+                        subject: EMAIL_SUBJECT,
+                        body: htmlContent,
+                        mimeType: 'text/html'
+                    )
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            emailext(
+                mimeType: 'text/html',
+                to: EMAIL_RECIPIENT,
+                subject: "Kafka Connector Job Failed",
+                body: """<html>
+                        <body>
+                            <p>Dear Team,</p>
+                            <p>The Kafka Connector job has failed. Please check the details below:</p>
+                            <p><a href="${env.BUILD_URL}">${env.BUILD_URL}</a></p>
+                        </body>
+                        </html>"""
+            )
+        }
+    }
+}
+```
