@@ -1,0 +1,105 @@
+```
+pipeline {
+    agent any
+
+    environment {
+        SCRIPT_PATH = '/path/to/your/script.sh'  // Specify the full path to the shell script
+        EMAIL_RECIPIENT = 'example@domain.com'  // Recipient email address
+    }
+
+    stages {
+        stage('Run Kafka Connector Status Check') {
+            steps {
+                script {
+                    // Execute the shell script and capture the output
+                    def result = sh(script: SCRIPT_PATH, returnStdout: true).trim()
+
+                    // If the result contains "FAILED", an error message will be returned
+                    if (result.contains("Connector Name:")) {
+                        // Set the build result as unstable (or failed) due to failed connectors
+                        currentBuild.result = 'UNSTABLE'
+
+                        // Send email with the failed connector details
+                        emailext(
+                            subject: "Failed Kafka Connectors Detected",
+                            body: "The following Kafka connectors have failed:\n\n${result}",
+                            to: EMAIL_RECIPIENT
+                        )
+                    } else {
+                        echo "No failed connectors found"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Kafka connector status check completed successfully.'
+        }
+        failure {
+            echo 'Kafka connector status check failed.'
+            // Optional: Send a failure email notification
+            emailext(
+                subject: "Kafka Connector Status Check Failed",
+                body: "The Kafka connector status check failed. Please investigate.",
+                to: EMAIL_RECIPIENT
+            )
+        }
+        unstable {
+            echo 'Kafka connectors were detected as failed, but the build is marked as unstable.'
+            // Optional: Send a different email for unstable builds
+            emailext(
+                subject: "Kafka Connector Status Check - Unstable",
+                body: "The Kafka connector status check completed with failures. Please investigate the following connectors:\n\n${result}",
+                to: EMAIL_RECIPIENT
+            )
+        }
+    }
+}
+```
+#!/bin/bash
+
+# Define API endpoints and credentials
+USER="em"
+PASSWORD="random"
+AUTH_URL="https://a.c.net/api/v2/login/credentials"
+INT_ENDPOINTS=(
+    "https://a.c.net/api/proxy-connect/INT/connectors/em.api.acm.bundle_qa/status"
+    "https://a.c.net/api/proxy-connect/INT/connectors/em.api.acm.bundle_ti/status"
+)
+
+# Get authentication token
+TOKEN=$(curl -s -X POST $AUTH_URL -H "Content-Type: application/json" -d "{\"user\":\"$USER\", \"password\":\"$PASSWORD\"}" | jq -r '.token')
+
+# Check if token was obtained
+if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
+    echo "Failed to authenticate"
+    exit 1
+fi
+
+# Initialize an empty result variable
+FAILED_CONNECTORS=""
+
+# Check Kafka connector status
+for ENDPOINT in "${INT_ENDPOINTS[@]}"; do
+    RESPONSE=$(curl -s -H "X-Kafka-Lenses-Token: $TOKEN" "$ENDPOINT")
+    CONNECTOR_NAME=$(echo "$RESPONSE" | jq -r '.name')
+    CONNECTOR_STATE=$(echo "$RESPONSE" | jq -r '.connector.state')
+    TASK_IDS=$(echo "$RESPONSE" | jq -r '.tasks[].id')
+    TASK_STATES=$(echo "$RESPONSE" | jq -r '.tasks[].state')
+
+    if [[ "$CONNECTOR_STATE" == "FAILED" || "$TASK_STATES" == *"FAILED"* ]]; then
+        FAILED_CONNECTORS="${FAILED_CONNECTORS}\nConnector Name: $CONNECTOR_NAME\nConnector State: $CONNECTOR_STATE\nTask IDs: $TASK_IDS\nTask States: $TASK_STATES\n------------------------"
+    fi
+done
+
+# Check if failed connectors were found and print them for Jenkins to handle
+if [[ -n "$FAILED_CONNECTORS" ]]; then
+    echo -e "$FAILED_CONNECTORS"
+    exit 1  # Return error to Jenkins if failures are found
+else
+    echo "No failed connectors found"
+    exit 0  # Return success to Jenkins if no failures
+fi
+```
