@@ -4,24 +4,27 @@ pipeline {
         stage('Run Kafka Connector Status Check') {
             steps {
                 script {
-                    // Capture the result and exit code explicitly
-                    def result = ''
-                    def exitCode = sh(
+                    // Run the script and capture both stdout and exit code
+                    def commandOutput = sh(
                         script: '''
-                        ./auto-rStatusCheck.sh
-                        ''',
+                        ./auto-deployment/                   ''',
                         returnStdout: true,
-                        returnStatus: true // Captures exit code
+                        returnStatus: true // Captures the exit code
                     )
-                    result = result.trim()
 
-                    // Check the exit code
+                    def result = commandOutput.stdout?.trim() // Capture stdout
+                    def exitCode = commandOutput.status // Capture exit code
+
+                    // Debug log for result and exit code
+                    echo "Script Output: ${result}"
+                    echo "Exit Code: ${exitCode}"
+
+                    // Handle the exit code and check for failed connectors
                     if (exitCode == 1) {
-                        // Script returned an error, handle failure
                         if (result.contains("Connector Name:")) {
                             currentBuild.result = 'UNSTABLE'
                             echo "Failed connectors found:\n${result}"
-                            
+
                             // Send email notification
                             emailext(
                                 subject: "Failed Kafka Connectors Detected",
@@ -32,20 +35,17 @@ pipeline {
                             echo "Error occurred, but no failed connectors reported:\n${result}"
                         }
                     } else if (exitCode == 0) {
-                        // Script succeeded
                         echo "No failed connectors found:\n${result}"
                     } else {
-                        // Handle unexpected exit codes
                         error("Unexpected exit code: ${exitCode}")
                     }
 
-                    // Continue to the next steps
                     echo "Continuing with subsequent steps..."
                 }
             }
             post {
                 always {
-                    echo "Stage completed: Cleaning up or performing final steps if required."
+                    echo "Stage completed: Performing final steps if required."
                 }
                 success {
                     echo "Stage completed successfully: All connectors are operational."
@@ -68,21 +68,9 @@ pipeline {
         }
         unstable {
             echo "Pipeline marked as UNSTABLE: Check logs for details."
-            // Send email notification for the unstable build
-            emailext(
-                subject: "Pipeline Marked as Unstable",
-                body: "The pipeline encountered issues:\n\nPlease check the logs for more details.",
-                to: EMAIL_RECIPIENT
-            )
         }
         failure {
             echo "Pipeline failed: Investigate the errors in the logs."
-            // Optional: Email notification for failure
-            emailext(
-                subject: "Pipeline Failure Alert",
-                body: "The pipeline failed:\n\nPlease check the logs for more details.",
-                to: EMAIL_RECIPIENT
-            )
         }
     }
 }
