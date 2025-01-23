@@ -1,0 +1,88 @@
+pipeline {
+    agent any
+    stages {
+        stage('Run Kafka Connector Status Check') {
+            steps {
+                script {
+                    // Capture the result and exit code explicitly
+                    def result = ''
+                    def exitCode = sh(
+                        script: '''
+                        ./auto-rStatusCheck.sh
+                        ''',
+                        returnStdout: true,
+                        returnStatus: true // Captures exit code
+                    )
+                    result = result.trim()
+
+                    // Check the exit code
+                    if (exitCode == 1) {
+                        // Script returned an error, handle failure
+                        if (result.contains("Connector Name:")) {
+                            currentBuild.result = 'UNSTABLE'
+                            echo "Failed connectors found:\n${result}"
+                            
+                            // Send email notification
+                            emailext(
+                                subject: "Failed Kafka Connectors Detected",
+                                body: "The following Kafka connectors have failed:\n\n${result}",
+                                to: EMAIL_RECIPIENT
+                            )
+                        } else {
+                            echo "Error occurred, but no failed connectors reported:\n${result}"
+                        }
+                    } else if (exitCode == 0) {
+                        // Script succeeded
+                        echo "No failed connectors found:\n${result}"
+                    } else {
+                        // Handle unexpected exit codes
+                        error("Unexpected exit code: ${exitCode}")
+                    }
+
+                    // Continue to the next steps
+                    echo "Continuing with subsequent steps..."
+                }
+            }
+            post {
+                always {
+                    echo "Stage completed: Cleaning up or performing final steps if required."
+                }
+                success {
+                    echo "Stage completed successfully: All connectors are operational."
+                }
+                unstable {
+                    echo "Stage marked as UNSTABLE: Issues with connectors detected."
+                }
+                failure {
+                    echo "Stage failed: Script or pipeline error occurred."
+                }
+            }
+        }
+    }
+    post {
+        always {
+            echo "Pipeline execution completed: Final cleanup if necessary."
+        }
+        success {
+            echo "Pipeline executed successfully: No issues found."
+        }
+        unstable {
+            echo "Pipeline marked as UNSTABLE: Check logs for details."
+            // Send email notification for the unstable build
+            emailext(
+                subject: "Pipeline Marked as Unstable",
+                body: "The pipeline encountered issues:\n\nPlease check the logs for more details.",
+                to: EMAIL_RECIPIENT
+            )
+        }
+        failure {
+            echo "Pipeline failed: Investigate the errors in the logs."
+            // Optional: Email notification for failure
+            emailext(
+                subject: "Pipeline Failure Alert",
+                body: "The pipeline failed:\n\nPlease check the logs for more details.",
+                to: EMAIL_RECIPIENT
+            )
+        }
+    }
+}
