@@ -1,0 +1,116 @@
+'''
+#!/bin/bash
+
+# Define API credentials
+USER="em"
+PASSWORD="random"
+AUTH_URL="https://a.c.net/api/v2/login/credentials"
+ENDPOINTS_FILE="/path/to/endpoints.txt"  # Path to the endpoints file
+
+# Get authentication token
+TOKEN=$(curl -s -X POST $AUTH_URL -H "Content-Type: application/json" -d "{\"user\":\"$USER\", \"password\":\"$PASSWORD\"}" | jq -r '.token')
+
+# Check if token was obtained
+if [[ -z "$TOKEN" || "$TOKEN" == "null" ]]; then
+    echo "ERROR: Failed to authenticate. Please check credentials or API endpoint." >&2
+    exit 1
+fi
+
+# Read endpoints from the file
+if [[ ! -f "$ENDPOINTS_FILE" ]]; then
+    echo "ERROR: Endpoints file not found at $ENDPOINTS_FILE" >&2
+    exit 1
+fi
+
+INT_ENDPOINTS=$(cat "$ENDPOINTS_FILE")
+
+# Initialize an empty result variable
+FAILED_CONNECTORS=""
+
+# Check Kafka connector status
+for ENDPOINT in $INT_ENDPOINTS; do
+    RESPONSE=$(curl -s -H "X-Kafka-Lenses-Token: $TOKEN" "$ENDPOINT")
+    CONNECTOR_NAME=$(echo "$RESPONSE" | jq -r '.name')
+    CONNECTOR_STATE=$(echo "$RESPONSE" | jq -r '.connector.state')
+    TASK_IDS=$(echo "$RESPONSE" | jq -r '.tasks[].id')
+    TASK_STATES=$(echo "$RESPONSE" | jq -r '.tasks[].state')
+
+    # Check if connector or any task has failed
+    TASK_FAILED=false
+    for STATE in $TASK_STATES; do
+        if [[ "$STATE" == "FAILED" ]]; then
+            TASK_FAILED=true
+            break
+        fi
+    done
+
+    if [[ "$CONNECTOR_STATE" == "FAILED" || "$TASK_FAILED" == true ]]; then
+        FAILED_CONNECTORS="${FAILED_CONNECTORS}\nConnector Name: $CONNECTOR_NAME\nConnector State: $CONNECTOR_STATE\nTask IDs: $TASK_IDS\nTask States: $TASK_STATES\n------------------------"
+    fi
+done
+
+# Check if failed connectors were found and print them for Jenkins to handle
+if [[ -n "$FAILED_CONNECTORS" ]]; then
+    echo -e "$FAILED_CONNECTORS" | cat  # Use cat to avoid buffering issues
+    exit 0  # Return success to Jenkins, but pipeline will mark as unstable
+else
+    echo "No failed connectors found"
+    exit 0  # Return success to Jenkins
+fi
+'''
+'''
+pipeline {
+    agent any
+
+    environment {
+        SCRIPT_PATH = '/path/to/your/script.sh'  // Path to the shell script
+        ENDPOINTS_FILE = '/path/to/endpoints.txt'  // Path to the endpoints file
+        EMAIL_RECIPIENT = 'example@domain.com'  // Recipient email address
+    }
+
+    stages {
+        stage('Run Kafka Connector Status Check') {
+            steps {
+                script {
+                    try {
+                        // Execute the shell script and capture the output
+                        def result = sh(script: "${SCRIPT_PATH} ${ENDPOINTS_FILE}", returnStdout: true).trim()
+
+                        // If the result contains "Connector Name:", mark the build as unstable
+                        if (result.contains("Connector Name:")) {
+                            currentBuild.result = 'UNSTABLE'  // Mark build as unstable
+                            emailext(
+                                subject: "Failed Kafka Connectors Detected",
+                                body: "The following Kafka connectors have failed:\n\n${result}",
+                                to: EMAIL_RECIPIENT
+                            )
+                        } else {
+                            echo "No failed connectors found"
+                        }
+                    } catch (Exception e) {
+                        echo "Script execution failed: ${e}"
+                        currentBuild.result = 'FAILURE'
+                        emailext(
+                            subject: "Script Execution Failed",
+                            body: "The script execution failed with the following error:\n\n${e}",
+                            to: EMAIL_RECIPIENT
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Kafka connector status check completed successfully.'
+        }
+        unstable {
+            echo 'Kafka connectors were detected as failed, but the build is marked as unstable.'
+        }
+        failure {
+            echo 'Kafka connector status check failed.'
+        }
+    }
+}
+'''
